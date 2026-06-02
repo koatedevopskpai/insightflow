@@ -3,8 +3,10 @@ import numpy as np
 import pandas as pd
 import mlflow
 import mlflow.sklearn
-from sklearn.datasets import fetch_california_housing
-from sklearn.model_selection import train_test_split
+
+# from sklearn.datasets import fetch_california_housing
+# from sklearn.model_selection import train_test_split
+
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.pipeline import Pipeline
@@ -15,13 +17,21 @@ mlflow.set_tracking_uri("sqlite:///mlflow.db")
 mlflow.set_experiment("California Housing Baseline")
 
 # Load data
-housing = fetch_california_housing()
-X = pd.DataFrame(housing.data, columns=housing.feature_names)
-y = housing.target
+# housing = fetch_california_housing()
+# X = pd.DataFrame(housing.data, columns=housing.feature_names)
+# y = housing.target
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+# X_train, X_test, y_train, y_test = train_test_split(
+#     X, y, test_size=0.2, random_state=42
+# )
+train_df = pd.read_csv("train.csv")
+test_df = pd.read_csv("test.csv")
+
+# Load data (refactored to read train.csv & to use data from MedHouseVal)
+X_train = train_df.drop("MedHouseVal", axis=1)
+y_train = train_df["MedHouseVal"]
+X_test = test_df.drop("MedHouseVal", axis=1)
+y_test = test_df["MedHouseVal"]
 
 # Define hyperparameters to test
 n_estimators = 100
