@@ -1,77 +1,62 @@
-# train.py
-import numpy as np
-import pandas as pd
+"""Train a single California Housing model run, logged to MLflow.
+
+The tracking backend, experiment, and hyperparameters are all configurable
+via CLI flags or environment variables, so the same script drives both
+local experiments and a remote MLflow tracking server without edits.
+
+Usage:
+    python train.py --n-estimators 100 --max-depth 10
+"""
+
+import argparse
+import os
+
 import mlflow
-import mlflow.sklearn
+from dotenv import load_dotenv
 
-# from sklearn.datasets import fetch_california_housing
-# from sklearn.model_selection import train_test_split
+from data import load_split
+from model import RANDOM_STATE, train_and_evaluate
 
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import mean_squared_error
+EXPERIMENT_NAME = "California Housing Baseline"
 
-# Set the MLflow tracking URI to a local directory (or can use a remote server)
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
-mlflow.set_experiment("California Housing Baseline")
 
-# Load data
-# housing = fetch_california_housing()
-# X = pd.DataFrame(housing.data, columns=housing.feature_names)
-# y = housing.target
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train a California Housing model.")
+    parser.add_argument("--n-estimators", type=int, default=100)
+    parser.add_argument("--max-depth", type=int, default=10)
+    parser.add_argument("--experiment", default=EXPERIMENT_NAME)
+    return parser.parse_args()
 
-# X_train, X_test, y_train, y_test = train_test_split(
-#     X, y, test_size=0.2, random_state=42
-# )
-train_df = pd.read_csv("train.csv")
-test_df = pd.read_csv("test.csv")
 
-# Load data (refactored to read train.csv & to use data from MedHouseVal)
-X_train = train_df.drop("MedHouseVal", axis=1)
-y_train = train_df["MedHouseVal"]
-X_test = test_df.drop("MedHouseVal", axis=1)
-y_test = test_df["MedHouseVal"]
+def main(args: argparse.Namespace) -> None:
+    load_dotenv()
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"))
+    mlflow.set_experiment(args.experiment)
 
-# Define hyperparameters to test
-n_estimators = 100
-max_depth = 5
+    X_train, y_train, X_test, y_test = load_split()
 
-# Start an MLflow run
-with mlflow.start_run():
-    # Log parameters
-    mlflow.log_param("model_type", "RandomForestRegressor")
-    mlflow.log_param("n_estimators", n_estimators)
-    mlflow.log_param("max_depth", max_depth)
+    # Autolog captures sklearn params, metrics, and the model artifact.
+    mlflow.autolog(log_models=True)
 
-    # Build pipeline
-    pipeline = Pipeline(
-        [
-            ("scaler", StandardScaler()),
-            (
-                "regressor",
-                RandomForestRegressor(
-                    n_estimators=n_estimators,
-                    max_depth=max_depth,
-                    random_state=42,  # noqa : E501
-                ),
-            ),
-        ]
-    )
+    with mlflow.start_run():
+        _, rmse = train_and_evaluate(
+            X_train,
+            y_train,
+            X_test,
+            y_test,
+            n_estimators=args.n_estimators,
+            max_depth=args.max_depth,
+        )
+        mlflow.log_params(
+            {"n_estimators": args.n_estimators, "max_depth": args.max_depth}
+        )
+        mlflow.log_metric("rmse", rmse)
 
-    # Train
-    pipeline.fit(X_train, y_train)
+        print(
+            f"Run logged: n_estimators={args.n_estimators}, "
+            f"max_depth={args.max_depth}, RMSE={rmse:.4f}"
+        )
 
-    # Evaluate
-    y_pred = pipeline.predict(X_test)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-    # Log metric
-    mlflow.log_metric("rmse", rmse)
-
-    # Log the model
-    mlflow.sklearn.log_model(pipeline, "model")
-
-    print(
-        f"Run logged: n_estimators={n_estimators}, max_depth={max_depth}, RMSE={rmse:.4f}"  # noqa : E501
-    )
+if __name__ == "__main__":
+    main(parse_args())
