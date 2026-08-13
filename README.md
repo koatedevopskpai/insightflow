@@ -101,12 +101,11 @@ Interactive API docs are available at `http://localhost:8000/docs`.
 
 ### Data Versioning with DVC
 
-The project uses a **local DVC remote** (`dvc_remote/`, git-ignored) so the workflow is credential-free. Swap to S3/GCS when needed:
+The project uses a **Google Cloud Storage (GCS) remote** (`gs://insightflow-dvc/dvc`). GitHub Actions authenticates via **Workload Identity Federation** (OIDC) — no long-lived service-account keys are stored in the repo. CI pulls versioned data before training:
 
 ```bash
-dvc remote modify local url s3://your-bucket/insightflow
-dvc push          # upload versioned data
-dvc pull          # restore data from remote
+dvc pull          # restore data from the GCS remote
+dvc push          # upload versioned data to the GCS remote
 ```
 
 ### Quality Gates

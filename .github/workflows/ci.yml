@@ -64,15 +64,23 @@ jobs:
       needs.data-change.outputs.changed == 'true' ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Pull data from DVC remote
+      - name: Pull data from DVC GCS remote
         run: dvc pull
       - name: Run Optuna sweep
         run: python optimize.py --n-trials 10 --min-rmse 1.0
