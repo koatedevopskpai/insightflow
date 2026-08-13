@@ -1,111 +1,137 @@
 # Insightflow
 
-An AI engineering portfolio project exploring the full ML/LLM lifecycle — from data versioning and experiment tracking to a working LLM application. Built to demonstrate real engineering practices, not just notebooks.
+An end-to-end **MLOps lifecycle** project: a production-style machine learning pipeline on the California Housing dataset with data versioning, experiment tracking, Bayesian hyperparameter optimization, model registry promotion, and a containerized inference API.
 
-## Overview
+The repository demonstrates the engineering practices that separate an ML project from an ML *product* — reproducibility, auditability, and a guarded path from experiment to production.
 
-Insightflow currently contains two complementary tracks:
-
-1. **Production-style ML pipeline** — a RandomForestRegressor trained on the California Housing dataset, instrumented with **MLflow** for experiment tracking and **DVC** for data versioning.
-2. **LLM application** — a GPT-4o-mini-powered terminal app that generates dad jokes on any topic.
-
-## ML Pipeline
-
-| Stage | Tool | File |
-| --- | --- | --- |
-| Data preparation | `pandas` / `scikit-learn` | `prepare_data.py` |
-| Data versioning | DVC | `train.csv.dvc`, `test.csv.dvc` |
-| Experiment tracking | MLflow | `train.py` |
-| Model | RandomForestRegressor (scikit-learn pipeline) | `train.py` |
-
-### Feature Engineering
-
-`prepare_data.py` builds the California Housing dataset and derives domain-aware features:
-
-- `RoomsPerHousehold` — average rooms relative to occupants
-- `BedroomsPerRoom` — density of bedrooms per room
-- `PopulationPerHousehold` — occupancy density
-- `LogMedInc` — log-transform of the skewed median income feature
-
-It also guards against division-by-zero (`inf`/`NaN`) and splits data 80/20 with a fixed random state for reproducibility.
-
-### Experiment Tracking (MLflow)
-
-`train.py` logs every run to a local SQLite tracking store (`mlflow.db`):
-
-- **Parameters** — model type, `n_estimators`, `max_depth`
-- **Metrics** — RMSE on the held-out test set
-- **Artifacts** — the trained pipeline, logged via `mlflow.sklearn.log_model`
-
-### Data Versioning (DVC)
-
-The datasets are versioned with DVC so any experiment can be reproduced against the exact data it was trained on.
-
-## LLM App
-
-`app.py` is a continuous chat loop that generates dad jokes about any topic using `gpt-4o-mini`:
-
-```bash
-python app.py
-```
+## Pipeline Overview
 
 ```
-Welcome to the Dad Joke Terminal! (Type 'exit' to quit)
-What topic do you want a joke about? > programming
-Dad Bot: Why do programmers prefer dark mode? Because light attracts bugs!
+┌──────────────┐   ┌──────────────┐   ┌────────────────┐   ┌──────────────────┐
+│ Data         │──▶│ Feature      │──▶│ Optuna sweep   │──▶│ MLflow Model     │
+│ versioning   │   │ engineering  │   │ (Bayesian TPE) │   │ Registry         │
+│ (DVC)        │   │ features.py  │   │ optimize.py    │   │ (gated promote)  │
+└──────────────┘   └──────────────┘   └────────────────┘   └────────┬─────────┘
+                                                                    ▼
+                                                          ┌──────────────────┐
+                                                          │ FastAPI serving  │
+                                                          │ + Docker         │
+                                                          │ (serve.py)       │
+                                                          └──────────────────┘
+```
+
+**Stage 1 — Data versioning (DVC).** The train/test CSVs are tracked by DVC with content-addressed hashing (`*.dvc` files in git, blobs in a remote store). Any experiment can be reproduced against the exact data it was trained on.
+
+**Stage 2 — Feature engineering (`features.py`).** Derived features (`RoomsPerHousehold`, `BedroomsPerRoom`, `PopulationPerHousehold`, `LogMedInc`) live in one shared module used by both training and serving — structurally preventing train/serve skew.
+
+**Stage 3 — Bayesian optimization (`optimize.py`).** Optuna's TPE sampler explores `n_estimators` / `max_depth` over the shared training core, logging every trial as an MLflow run.
+
+**Stage 4 — Model registry (`optimize.py`).** The best candidate is registered and promoted to Production — but only if it beats an absolute quality gate (`--min-rmse`) *and* the incumbent Production model. This is the ML analogue of a CI merge gate.
+
+**Stage 5 — Serving (`serve.py`).** A FastAPI app loads the frozen Production model once at startup and exposes a validated `/predict` endpoint, containerized with Docker.
+
+## Project Structure
+
+```
+insightflow
+├── features.py           # Shared feature engineering (train/serve contract)
+├── data.py               # Canonical dataset loading
+├── model.py              # Pipeline + training core
+├── prepare_data.py       # Build + engineer + split the dataset
+├── train.py              # Single training run (argparse + MLflow autolog)
+├── optimize.py           # Optuna Bayesian sweep + registry promotion
+├── export_model.py       # Freeze Production model into models/production
+├── serve.py              # FastAPI inference endpoint
+├── Dockerfile            # Serving image (model mounted at runtime)
+├── docker-compose.yml    # API + frozen model volume
+├── tests/                # Hermetic pytest suite
+├── .github/workflows/    # CI: lint, test, data-change training
+└── examples/             # Standalone LLM demo (appendix)
 ```
 
 ## Getting Started
 
 ### Prerequisites
 
-- Python 3.10+
-- An [OpenAI API key](https://platform.openai.com/api-keys) for the LLM app
+- Python 3.11+ (developed on 3.14)
+- Docker (for the serving container)
 
 ### Setup
 
 ```bash
 git clone https://github.com/koate-kpai/insightflow.git
 cd insightflow
-python -m venv venv
-source venv/bin/activate   # macOS/Linux
-venv\Scripts\activate      # Windows
-pip install -r requirements.txt
+python -m venv .venv
+# Windows: .venv\Scripts\activate   |   macOS/Linux: source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env
 ```
 
-Create a `.env` file with your key:
-
-```
-OPENAI_API_KEY="sk-your-api-key-here"
-```
-
-### Prepare Data & Train
+## Running the Pipeline
 
 ```bash
-python prepare_data.py    # build + engineer features, split train/test
-python train.py           # train and log the run to MLflow
-mlflow ui                 # inspect runs at http://localhost:5000
+# 1. Prepare data (feature engineering + split)
+python prepare_data.py
+
+# 2. Train a single model run (logged to MLflow)
+python train.py --n-estimators 100 --max-depth 10
+
+# 3. Bayesian hyperparameter search + gated promotion
+python optimize.py --n-trials 20 --min-rmse 0.75
+
+# 4. Inspect runs
+mlflow ui          # http://localhost:5000
+
+# 5. Freeze the Production model and serve it
+python export_model.py
+docker compose up --build
+curl http://localhost:8000/health
 ```
 
-## Project Structure
+### Calling the API
 
-```
-insightflow
-├── app.py               # LLM terminal app (dad jokes via GPT-4o-mini)
-├── prepare_data.py      # Feature engineering + train/test split
-├── train.py             # MLflow-tracked sklearn pipeline training
-├── train.csv.dvc        # DVC-tracked training data
-├── test.csv.dvc         # DVC-tracked test data
-├── requirements.txt
-└── README.md
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"MedInc":8.3,"HouseAge":30,"AveRooms":6.1,"AveBedrms":1.1,
+       "Population":1000,"AveOccup":3.2,"Latitude":37.7,"Longitude":-122.2}'
 ```
 
-## Roadmap
+Interactive API docs are available at `http://localhost:8000/docs`.
 
-- Add a model registry stage (MLflow Model Registry) with staging/production transitions
-- Add automated evaluation and hyperparameter sweep across experiments
-- Containerize with Docker and expose the model via a FastAPI inference endpoint
-- Migrate DVC remote storage to an S3-compatible bucket
+### Data Versioning with DVC
+
+The project uses a **local DVC remote** (`dvc_remote/`, git-ignored) so the workflow is credential-free. Swap to S3/GCS when needed:
+
+```bash
+dvc remote modify local url s3://your-bucket/insightflow
+dvc push          # upload versioned data
+dvc pull          # restore data from remote
+```
+
+### Quality Gates
+
+- **Lint & tests** run on every push/PR (GitHub Actions): `ruff check .` + `pytest`.
+- **Training** runs only when data or model code changes (`*.csv.dvc`, `prepare_data.py`, `optimize.py`, `model.py`) or on manual dispatch.
+- **Promotion** requires the candidate to beat both `--min-rmse` and the incumbent Production model.
+
+## Key Architectural Decisions
+
+1. **Shared feature engineering (`features.py`)** — the single biggest cause of silent production failures in ML is train/serve skew. Training and the API both call `engineer_features`, so the transform can never diverge.
+2. **Application factory (`create_app`)** — lets tests inject a model without touching the registry, keeping the suite hermetic and fast.
+3. **Frozen model artifact for Docker** — MLflow registry artifact URIs are absolute host paths, so a container can't resolve a registry produced on another machine. `export_model.py` freezes the Production model into a plain directory that's mounted into the container, decoupling serving from the authoring environment.
+4. **Gated promotion** — a candidate never silently replaces a deployed model; it must clear an absolute RMSE threshold and beat the incumbent.
+5. **Config via environment** — `MLFLOW_TRACKING_URI` / `MLFLOW_MODEL_URI` mean the same code runs against local SQLite or a remote tracking server with zero edits.
+
+## Testing
+
+```bash
+pytest          # 13 hermetic tests (no data files, no registry, no network)
+```
+
+## Example (Appendix)
+
+`examples/dad_joke_app/` contains the original GPT-4o-mini terminal app — kept as a separate, self-contained demo unrelated to the MLOps pipeline.
 
 ## License
 
@@ -113,4 +139,4 @@ This project is open source. See the `LICENSE` file for details (if applicable).
 
 ## Acknowledgements
 
-Built with [scikit-learn](https://scikit-learn.org/), [MLflow](https://mlflow.org/), [DVC](https://dvc.org/), and [OpenAI](https://platform.openai.com/).
+Built with [scikit-learn](https://scikit-learn.org/), [MLflow](https://mlflow.org/), [DVC](https://dvc.org/), [Optuna](https://optuna.org/), [FastAPI](https://fastapi.tiangolo.com/), and [Docker](https://www.docker.com/).
