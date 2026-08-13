@@ -1,0 +1,16 @@
+# Docker ignores: keep the image lean and keep secrets/local state out.
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+mlruns/
+mlflow.db
+train.csv
+test.csv
+data/
+dvc_remote/
+.git/
+.github/

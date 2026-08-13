@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # serve.py loads the model from this filesystem path; the frozen
+      # model is exported from the registry by `python export_model.py`
+      # and mounted read-only. No registry access needed at runtime.
+      MLFLOW_MODEL_URI: /models/production
+    volumes:
+      - ./models/production:/models/production:ro

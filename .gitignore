@@ -24,3 +24,6 @@ data/
 
 # Local DVC remote storage (see .dvc/config)
 dvc_remote/
+
+# Frozen model export (see export_model.py)
+models/
