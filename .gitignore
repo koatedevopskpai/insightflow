@@ -1,7 +1,26 @@
+# Environments
 .env
 venv/
+.venv/
+
+# Python caches
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# MLflow artifacts
 mlruns/
 mlflow.db
+
+# Optuna study storage
+optuna.db
+optuna-journal.log
+
+# DVC: data files are versioned via .dvc files, not committed
 /train.csv
 /test.csv
+data/
+
+# Local DVC remote storage (see .dvc/config)
+dvc_remote/
