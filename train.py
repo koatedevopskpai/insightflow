@@ -15,7 +15,7 @@ import mlflow
 from dotenv import load_dotenv
 
 from data import load_split
-from model import RANDOM_STATE, train_and_evaluate
+from model import train_and_evaluate
 
 EXPERIMENT_NAME = "California Housing Baseline"
 
