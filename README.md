@@ -59,7 +59,7 @@ insightflow
 ### Setup
 
 ```bash
-git clone https://github.com/koate-kpai/insightflow.git
+git clone https://github.com/koatedevopskpai/insightflow.git
 cd insightflow
 python -m venv .venv
 # Windows: .venv\Scripts\activate   |   macOS/Linux: source .venv/bin/activate
@@ -139,3 +139,10 @@ This project is open source. See the `LICENSE` file for details (if applicable).
 ## Acknowledgements
 
 Built with [scikit-learn](https://scikit-learn.org/), [MLflow](https://mlflow.org/), [DVC](https://dvc.org/), [Optuna](https://optuna.org/), [FastAPI](https://fastapi.tiangolo.com/), and [Docker](https://www.docker.com/).
+
+
+## Claim review — 18 October 2026
+
+See [verification and limits](evidence/W5-04.md) for the source revision, claim
+classification and observed CI status. Wording corrections do not establish a
+new deployment, passing test suite or production operation.
