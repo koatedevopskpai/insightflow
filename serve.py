@@ -17,6 +17,7 @@ Usage:
 """
 
 import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 import mlflow
@@ -60,9 +61,21 @@ def load_model(model_uri: str = MODEL_URI):
 
 
 def create_app(model: Any | None = None) -> FastAPI:
-    """Application factory. Tests may inject a model to avoid registry I/O."""
-    app = FastAPI(title=APP_NAME, version=APP_VERSION)
-    app.state.model = model if model is not None else load_model()
+    """Application factory. Tests may inject a model to avoid registry I/O.
+
+    The registry model is loaded during application *startup*, not at import
+    time. Importing this module therefore never requires a reachable MLflow
+    registry, which is what allows the test suite to run without one.
+    """
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if app.state.model is None:
+            app.state.model = load_model()
+        yield
+
+    app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
+    app.state.model = model
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -70,6 +83,9 @@ def create_app(model: Any | None = None) -> FastAPI:
 
     @app.post("/predict", response_model=PredictResponse)
     def predict(request: PredictRequest) -> PredictResponse:
+        if app.state.model is None:
+            raise HTTPException(status_code=503, detail="Model is not loaded.")
+
         # Build a 1-row DataFrame in the exact training column order and
         # apply the same feature engineering used at training time.
         row = {col: [getattr(request, col)] for col in RAW_FEATURE_COLUMNS}
